@@ -1,0 +1,128 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flutter Bluetooth Demo',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: BluetoothApp(),
+    );
+  }
+}
+
+class BluetoothApp extends StatefulWidget {
+  @override
+  _BluetoothAppState createState() => _BluetoothAppState();
+}
+
+class _BluetoothAppState extends State<BluetoothApp> {
+  FlutterBluePlus flutterBlue = FlutterBluePlus.instance;
+  List<BluetoothDevice> devicesList = [];
+  BluetoothDevice? connectedDevice;
+  List<BluetoothService>? services;
+
+  @override
+  void initState() {
+    super.initState();
+    _startScan();
+  }
+
+  void _startScan() {
+    flutterBlue.startScan(timeout: Duration(seconds: 4));
+    flutterBlue.scanResults.listen((results) {
+      for (ScanResult result in results) {
+        if (!devicesList.contains(result.device)) {
+          setState(() {
+            devicesList.add(result.device);
+          });
+        }
+      }
+    });
+  }
+
+  void _connectToDevice(BluetoothDevice device) async {
+    await device.connect();
+    setState(() {
+      connectedDevice = device;
+    });
+    discoverServices(device);
+  }
+
+  void discoverServices(BluetoothDevice device) async {
+    List<BluetoothService> services = await device.discoverServices();
+    setState(() {
+      this.services = services;
+    });
+  }
+
+  void _readCharacteristic(BluetoothCharacteristic characteristic) async {
+    List<int> value = await characteristic.read();
+    print("Characteristic value: $value");
+  }
+
+  void _writeCharacteristic(BluetoothCharacteristic characteristic) async {
+    await characteristic.write([0x12, 0x34]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Flutter Bluetooth Demo'),
+      ),
+      body: Column(
+        children: <Widget>[
+          ElevatedButton(
+            onPressed: _startScan,
+            child: Text('Scan for Devices'),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: devicesList.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  title: Text(devicesList[index].name),
+                  subtitle: Text(devicesList[index].id.toString()),
+                  onTap: () => _connectToDevice(devicesList[index]),
+                );
+              },
+            ),
+          ),
+          if (connectedDevice != null)
+            Text('Connected to: ${connectedDevice!.name}'),
+          if (services != null)
+            Expanded(
+              child: ListView.builder(
+                itemCount: services!.length,
+                itemBuilder: (context, index) {
+                  BluetoothService service = services![index];
+                  return ExpansionTile(
+                    title: Text('Service: ${service.uuid}'),
+                    children: service.characteristics.map((characteristic) {
+                      return ListTile(
+                        title: Text('Characteristic: ${characteristic.uuid}'),
+                        subtitle: Text('Properties: ${characteristic.properties.toString()}'),
+                        onTap: () => _readCharacteristic(characteristic),
+                        trailing: IconButton(
+                          icon: Icon(Icons.edit),
+                          onPressed: () => _writeCharacteristic(characteristic),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
